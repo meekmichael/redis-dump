@@ -86,7 +86,7 @@ class Redis
                 end
               end
               unless output_buffer.empty?
-                yield output_buffer 
+                yield output_buffer
               end
               unless chunk_entries.empty?
                 yield Redis::Dump.dump_strings(redis, chunk_entries) { |obj| self.class.encoder.encode(obj) } 
@@ -134,7 +134,7 @@ class Redis
       puts "total: #{total_size.to_bytes}"
       values
     end
-    
+
     def load(string_or_stream, &each_record)
       count = 0
       Redis::Dump.ld " LOAD SOURCE: #{string_or_stream}"
@@ -145,7 +145,7 @@ class Redis
         end
         this_redis = redis(obj["db"])
         #Redis::Dump.ld "load[#{this_redis.hash}, #{obj}]"
-        if each_record.nil? 
+        if each_record.nil?
           if Redis::Dump.safe && this_redis.exists(obj['key'])
             #Redis::Dump.ld " record exists (no change)"
             next
