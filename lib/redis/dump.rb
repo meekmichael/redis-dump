@@ -4,7 +4,7 @@ end
 
 require 'redis'
 require 'uri/redis'
-require 'yajl'
+require 'oj'
 
 class Redis
   class Dump
@@ -14,13 +14,11 @@ class Redis
     @host = '127.0.0.1'
     @port = 6379
     @debug = false
-    @encoder = Yajl::Encoder.new
-    @parser = Yajl::Parser.new
     @safe = true
     @chunk_size = 10000
     @with_optimizations = true
     class << self
-      attr_accessor :debug, :encoder, :parser, :safe, :host, :port, :chunk_size, :with_optimizations
+      attr_accessor :debug, :safe, :host, :port, :chunk_size, :with_optimizations
       def ld(msg)
         STDERR.puts "#%.4f: %s" % [Time.now.utc.to_f, msg] if debug
       end
@@ -65,7 +63,6 @@ class Redis
         dump_keys.each_with_index do |key,idx|
           entry, idxplus = key, idx+1
           #self.class.ld " #{key} (#{key_dump['type']}): #{key_dump['size'].to_bytes}"
-          #entry_enc = self.class.encoder.encode entry
           if block_given?
             chunk_entries << entry
             process_chunk idx, dump_keys_size do |count|
@@ -76,21 +73,21 @@ class Redis
                 if self.class.with_optimizations && type == 'string' 
                   true
                 else
-                  output_buffer.push self.class.encoder.encode(Redis::Dump.dump(redis, key, type))
+                  output_buffer.push Oj.dump(Redis::Dump.dump(redis, key, type))
                   false
                 end
               end
               unless output_buffer.empty?
-                yield output_buffer 
+                yield output_buffer
               end
               unless chunk_entries.empty?
-                yield Redis::Dump.dump_strings(redis, chunk_entries) { |obj| self.class.encoder.encode(obj) } 
+                yield Redis::Dump.dump_strings(redis, chunk_entries) { |obj| Oj.dump(obj) }
               end
               output_buffer.clear
               chunk_entries.clear
             end
           else
-            entries << self.class.encoder.encode(Redis::Dump.dump(redis, entry))
+            entries << Oj.dump(Redis::Dump.dump(redis, entry))
           end
         end
       end
@@ -129,18 +126,19 @@ class Redis
       puts "total: #{total_size.to_bytes}"
       values
     end
-    
+
     def load(string_or_stream, &each_record)
       count = 0
       Redis::Dump.ld " LOAD SOURCE: #{string_or_stream}"
-      Redis::Dump.parser.parse string_or_stream do |obj|
+      string_or_stream.read.each_line do |l|
+        obj = Oj.load(l)
         unless @dbs.member?(obj["db"].to_i)
           Redis::Dump.ld "db out of range: #{obj["db"]}"
           next
         end
         this_redis = redis(obj["db"])
         #Redis::Dump.ld "load[#{this_redis.hash}, #{obj}]"
-        if each_record.nil? 
+        if each_record.nil?
           if Redis::Dump.safe && this_redis.exists(obj['key'])
             #Redis::Dump.ld " record exists (no change)"
             next
